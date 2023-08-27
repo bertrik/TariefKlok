@@ -1,5 +1,7 @@
 #include <Arduino.h>
 
+#include <ESP8266HTTPClient.h>
+
 #include "WiFiManager.h"
 #include <ArduinoJson.h>
 #include <FastLED.h>
@@ -18,6 +20,7 @@ static WiFiManager wifiManager;
 static WiFiClient wifiClient;
 static char line[100];
 static CRGB leds[NUM_LEDS];
+static char espid[64];
 
 static void show_help(const cmd_t * cmds)
 {
@@ -28,8 +31,37 @@ static void show_help(const cmd_t * cmds)
 
 static int do_help(int argc, char *argv[]);
 
+static bool fetch_url(const char *host, int port, const char *path, String & response)
+{
+    HTTPClient httpClient;
+    httpClient.begin(wifiClient, host, port, path, false);
+    httpClient.setTimeout(20000);
+    httpClient.setUserAgent(espid);
+
+    printf("> GET http://%s:%d%s\n", host, port, path);
+    int res = httpClient.GET();
+
+    // evaluate result
+    bool result = (res == HTTP_CODE_OK);
+    response = result ? httpClient.getString() : httpClient.errorToString(res);
+    httpClient.end();
+    printf("< %d: %s\n", res, response.c_str());
+    return result;
+}
+
+static int do_get(int argc, char *argv[])
+{
+    String response;
+    if (fetch_url("stofradar.nl", 9001, "/electricity/price", response)) {
+        printf("fetched!\n");
+    }
+
+    return CMD_OK;
+}
+
 const cmd_t commands[] = {
     { "help", do_help, "Show help" },
+    { "get", do_get, "[url] GET URL" },
     { NULL, NULL, NULL }
 };
 
@@ -43,8 +75,9 @@ void setup(void)
 {
     Serial.begin(115200);
     Serial.println("\nTariefKlok");
-    
+
     EditInit(line, sizeof(line));
+    snprintf(espid, sizeof(espid), "esp8266-tariefklok-%06x", ESP.getChipId());
 
     FastLED.addLeds < WS2812B, PIN_LED_OUT, GRB > (leds, NUM_LEDS).setCorrection(TypicalSMD5050);
 
@@ -78,4 +111,3 @@ void loop(void)
         }
     }
 }
-
